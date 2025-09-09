@@ -1,4 +1,7 @@
 const express = require('express');
+const bodyParser = require('body-parser');
+var cookieParser = require('cookie-parser');
+const {notFound, errorHandler} = require('./src/middleware/errHandle');
 const cors = require('cors');
 require('dotenv').config();
 const dmCU2Router = require('./src/routes/dmCU2Route');
@@ -16,8 +19,24 @@ const dmKHRouter = require('./src/routes/dmKHRoute');
 const khCsThangRouter = require('./src/routes/khCsThangRoute');    
 const priceVNDRouter = require('./src/routes/priceVNDRoute');    
 const app = express()
-// cors
-app.use(cors())
+
+// JSON
+app.use(express.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+// Phân tích url-encoded body
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+// tự động lấy cookie
+app.use(cookieParser())
+app.use(bodyParser.urlencoded({extended: true}));
+const corsOptions = {
+   origin: [
+    'http://localhost:3000',
+  ],
+   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+   credentials: true,
+   optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
 // route
 app.get('/', (req, res) => {
     return res.json({
@@ -38,4 +57,8 @@ app.use('/api/cppt',cpptRouter);
 app.use('/api/dmKH', dmKHRouter);
 app.use('/api/khCsThang', khCsThangRouter);
 app.use('/api/priceVND', priceVNDRouter);
+// Bắt các route không khớp, trả về lỗi 404
+app.use(notFound)
+// Xử lý lỗi
+app.use(errorHandler)
 module.exports = app
