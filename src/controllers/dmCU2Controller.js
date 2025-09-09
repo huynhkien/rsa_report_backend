@@ -134,11 +134,39 @@ const delete_dmCU2 = asyncHandler(async(req, res) => {
         success: true,
         message: 'Xóa thành công'
     });
+});
+// Xóa nhiều thông tin
+const delete_dmCU2s = asyncHandler(async(req, res) => {
+    const {Ids} = req.body;
+    const pool = database.getPool();
+    if(!Array.isArray(Ids) || Ids.length === 0 ) throw new Error('Danh sách ID không hợp lệ');
+    const placeholders = Ids.map((_, index) => `@Id${index}`).join(',');
+    const request = pool.request();
+    Ids.forEach((id, index) => {
+        request.input(`Id${index}`, sql.VarChar, id)
+    });
+    const result = await request.query(`
+        DELETE FROM DM_CU2_COPY
+        WHERE Id IN (${placeholders})
+        `);
+    if(result.rowsAffected[0] === 0 ){
+        return res.status(400).json({
+            success: false,
+            message: 'Không tìm thấy bản ghi nào để xóa'
+        })
+    }
+    return res.status(200).json({
+        success: true,
+        message: 'Xóa thành công'
+    })
+
+
 })
 module.exports = {
     get_dmCU2s,
     get_dmCU2,
     create_dmCU2,
     edit_dmCU2,
-    delete_dmCU2
+    delete_dmCU2,
+    delete_dmCU2s
 }
