@@ -76,22 +76,9 @@ const get_dmCU2 = asyncHandler(async(req, res) => {
 // Edit thông tin
 const edit_dmCU2 = asyncHandler(async(req, res) => {
     const {id} = req.params;
-    const {Id, ...data} = req.body; // Loại bỏ Id từ body, chỉ lấy data cần update
-    console.log('Data to update:', data);
-    console.log('ID from params:', id);
-    
+    const {Id, ...data} = req.body;
     if(!id) throw new Error('Không tìm thấy ID!!!');
-    
-    // Kiểm tra nếu không có data để update
-    if(Object.keys(data).length === 0) {
-        return res.status(400).json({
-            success: false,
-            message: 'Không có dữ liệu để cập nhật'
-        });
-    }
-    
     const pool = database.getPool();
-    
     // Tạo query tự động từ JSON
     let setQuery = [];
     for (let key in data) {
@@ -103,17 +90,11 @@ const edit_dmCU2 = asyncHandler(async(req, res) => {
         SET ${setQuery.join(', ')}
         WHERE Id = @Id
     `;
-    
-    console.log('Generated Query:', query);
-    
     const request = pool.request();
-    request.input('Id', id);
     for (let key in data) {
         request.input(key, data[key]);
     }
-
     const result = await request.query(query);
-    console.log('Query Result:', result);
     
     // Kiểm tra số rows được affected
     if(result.rowsAffected[0] === 0){
@@ -125,7 +106,7 @@ const edit_dmCU2 = asyncHandler(async(req, res) => {
 
     return res.status(200).json({
         success: true,
-        message: `Cập nhật thành công ${Object.keys(data).length} cột cho bản ghi ID: ${id}`,
+        message: `Cập nhật thành công `,
         rowsAffected: result.rowsAffected[0],
         updatedColumns: Object.keys(data)
     });
