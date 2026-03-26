@@ -17,6 +17,9 @@ const index = {
     db_name3: {
         key: process.env.DB_NAME3
     },
+    db_name4: {
+        key: process.env.DB_NAME4
+    },
     db_login: {
         key: process.env.DB_LOGIN
     },
