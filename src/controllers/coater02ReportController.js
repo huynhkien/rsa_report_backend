@@ -74,7 +74,7 @@ const filterCoater02s = asyncHandler(async (req, res) => {
             .query(`
                 SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
                 ${whereClause}
-                ORDER BY [${TIMESTAMP_COL}] DESC
+                ORDER BY [${TIMESTAMP_COL}] ASC
                 OFFSET @offset ROWS
                 FETCH NEXT @limit ROWS ONLY
             `)
