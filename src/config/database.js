@@ -5,6 +5,7 @@ let pool;
 let pool1;
 let pool2;
 let pool3;
+let pool4;
 async function ConnectDatabase() {
     try {
         // Database - Năng lượng điện
@@ -79,6 +80,24 @@ async function ConnectDatabase() {
                 idleTimeoutMillis: 30000
             }
         }).connect();
+        // Database 4 - Production Managenet 
+        pool4 = await new sql.ConnectionPool({
+            user: config.db_login.key,
+            password: config.db_password.key,
+            server: config.db_server.key,
+            database: config.db_name4.key,
+            options: {
+                encrypt: false,
+                trustServerCertificate: true
+            },
+            requestTimeout: 60000,  
+            connectionTimeout: 30000,
+            pool: {
+                max: 10,
+                min: 0,
+                idleTimeoutMillis: 30000
+            }
+        }).connect();
         console.log("Kết nối tất cả database thành công");
 
     } catch (error) {
@@ -105,10 +124,17 @@ function getPool3() {
     if(!pool3) throw new Error("DB3 chưa kết nối");
     return pool3;
 }
+
+function getPool4() {
+    if(!pool4) throw new Error("DB4 chưa kết nối");
+    return pool4;
+}
+
 module.exports = {
     ConnectDatabase,
     getPool,
     getPool1,
     getPool2,
-    getPool3
+    getPool3,
+    getPool4
 };
