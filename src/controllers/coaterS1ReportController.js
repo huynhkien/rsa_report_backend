@@ -15,7 +15,7 @@ const createRequest = (pool, timeoutMs = 120000) => {
 // Lọc theo khoảng thời gian
 const filterCoaterS1s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(500, parseInt(req.query.limit) || 25);
+    const limit = Math.min(10000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
     const { date1, date2 } = req.query;
 
