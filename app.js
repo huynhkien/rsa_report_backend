@@ -8,6 +8,7 @@ const PowerSupplyInfoRouter = require('./src/routes/powerSupplyInfoRoute');
 const Coater02ReportRouter = require('./src/routes/coater02ReportRoute');    
 const CoaterS1ReportRouter = require('./src/routes/coaterS1ReportRoute');    
 const ProductionRouter = require('./src/routes/productionRoute');    
+const DataProductionRSARouter = require('./src/routes/dataProductionRSARoute');    
 const app = express()
 
 // JSON
@@ -38,6 +39,7 @@ app.use('/api/PowerSupplyInfo', PowerSupplyInfoRouter);
 app.use('/api/Coater02', Coater02ReportRouter);
 app.use('/api/CoaterS1', CoaterS1ReportRouter);
 app.use('/api/Production', ProductionRouter);
+app.use('/api/DataProductionRSA', DataProductionRSARouter);
 // Bắt các route không khớp, trả về lỗi 404
 app.use(notFound)
 // Xử lý lỗi
