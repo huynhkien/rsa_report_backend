@@ -17,58 +17,56 @@ const filterCoater02s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(1000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
-    const { date1, date2 } = req.query;
+    const { date1, date2, fanWind } = req.query;
 
-    // Validate input
     if (!date1 || !date2) {
-        return res.status(400).json({
-            success: false,
-            message: 'Vui lòng nhập thời gian bắt đầu và kết thúc'
-        });
+        return res.status(400).json({ success: false, message: 'Vui lòng nhập thời gian bắt đầu và kết thúc' });
     }
     const startTime = moment.utc(date1, 'YYYY-MM-DDTHH:mm:ss');
     const endTime   = moment.utc(date2, 'YYYY-MM-DDTHH:mm:ss');
 
     if (!startTime.isValid() || !endTime.isValid()) {
-        return res.status(400).json({
-            success: false,
-            message: 'Định dạng thời gian không hợp lệ. Dùng: YYYY-MM-DDTHH:mm:ss'
-        });
+        return res.status(400).json({ success: false, message: 'Định dạng thời gian không hợp lệ. Dùng: YYYY-MM-DDTHH:mm:ss' });
     }
-
     if (startTime.isAfter(endTime)) {
-        return res.status(400).json({
-            success: false,
-            message: 'Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc'
-        });
+        return res.status(400).json({ success: false, message: 'Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc' });
     }
-
-    // Giới hạn khoảng thời gian tối đa 31 ngày để tránh query quá nặng
-    const diffDays = endTime.diff(startTime, 'days');
-    if (diffDays > 31) {
-        return res.status(400).json({
-            success: false,
-            message: 'Khoảng thời gian tối đa là 31 ngày'
-        });
+    if (endTime.diff(startTime, 'days') > 31) {
+        return res.status(400).json({ success: false, message: 'Khoảng thời gian tối đa là 31 ngày' });
     }
 
     const pool = await database.getPool1();
-    const whereClause = `WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime`;
 
-    // Chạy song song 2 query
+    // Thêm điều kiện fanWind nếu có
+    const fanWindClause = fanWind !== undefined && fanWind !== ''
+        ? `AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > @fanWind`
+        : '';
+
+    const whereClause = `
+        WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
+        ${fanWindClause}
+    `;
+
+    // Hàm tạo request dùng chung
+    const buildRequest = (pool) => {
+        const req = createRequest(pool)
+            .input('startTime', sql.DateTime, startTime.toDate())
+            .input('endTime',   sql.DateTime, endTime.toDate());
+
+        // Chỉ thêm input fanWind nếu có giá trị
+        if (fanWind !== undefined && fanWind !== '') {
+            req.input('fanWind', sql.Int, parseInt(fanWind));
+        }
+        return req;
+    };
+
     const [countResult, dataResult] = await Promise.all([
-        createRequest(pool)
-            .input('startTime', sql.DateTime, startTime.toDate())
-            .input('endTime',   sql.DateTime, endTime.toDate())
-            .query(`
-                SELECT COUNT(*) as total 
-                FROM ${TABLE_NAME} WITH (NOLOCK)
-                ${whereClause}
-            `),
-
-        createRequest(pool)
-            .input('startTime', sql.DateTime, startTime.toDate())
-            .input('endTime',   sql.DateTime, endTime.toDate())
+        buildRequest(pool).query(`
+            SELECT COUNT(*) as total 
+            FROM ${TABLE_NAME} WITH (NOLOCK)
+            ${whereClause}
+        `),
+        buildRequest(pool)
             .input('offset', sql.Int, offset)
             .input('limit',  sql.Int, limit)
             .query(`
