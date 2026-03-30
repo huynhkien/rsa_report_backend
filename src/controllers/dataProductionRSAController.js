@@ -4,9 +4,9 @@ const asyncHandler = require('express-async-handler');
 const moment = require('moment');
 // Hiển thị thông tin sản xuất theo đợt sản xuất và mẻ
 const getDataProduction = asyncHandler(async (req, res) => {
-    const { dot_sx, me } = req.query;
-    if (!dot_sx && !me) {
-        throw new Error('Vui lòng cung cấp dot_sx hoặc me');
+    const { dot_sx, me, LOT } = req.query;
+    if (!dot_sx && !me && !LOT) {
+        throw new Error('Vui lòng cung cấp dot_sx hoặc me hoặc số lot');
     }
     const pool = await database.getPool4();
     const request = pool.request();
@@ -18,6 +18,10 @@ const getDataProduction = asyncHandler(async (req, res) => {
     if (me) {
         conditions.push('me = @me');
         request.input('me', sql.NVarChar(50), me);
+    }
+    if(LOT){
+        conditions.push('LOT = @LOT');
+        request.input('LOT', sql.NVarChar(50), LOT);
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const result = await request.query(`
