@@ -15,6 +15,13 @@ const addProduction = asyncHandler(async(req, res) => {
         || !SO_LOT 
     ) throw new Error('Vui lòng nhập đầy đủ các thông tin cần thiết');
     const pool = database.getPool3();
+    const existingLot = await pool.request()
+                    .input('SO_LOT', sql.NVarChar(50), SO_LOT)
+                    .query(`
+                        SELECT * 
+                        FROM DataSX_RSF WHERE SO_LOT = @SO_LOT
+                        `)
+    if(existingLot.recordset.length != 0) throw new Error('Thông tin số LOT đã tồn tại trong đợt sản xuất');
     // Nhập dữ liệu 
     const result = await pool.request()
         .input('DOT_SX', sql.NVarChar, DOT_SX)
@@ -156,11 +163,12 @@ const getProductions = asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const offset = (page - 1) * limit;
-    const { dotSX, meThu, maBTP, soLot, nvVH, truongCa, tuNgay, denNgay } = req.query;
+    const { dotSX, meThu, maBTP, soLot, nvVH, truongCa, tuNgay, denNgay, maTb } = req.query;
     const pool = await database.getPool3();
     const buildWhere = (request) => {
         const conditions = [];
         if (dotSX) { conditions.push(`DOT_SX LIKE @dotSX`); request.input('dotSX', sql.NVarChar, `%${dotSX}%`); }
+        if (maTb) { conditions.push(`MA_TB LIKE @maTb`); request.input('maTb', sql.NVarChar, `%${maTb}%`); }
         if (meThu) { conditions.push(`ME_THU LIKE @meThu`); request.input('meThu', sql.NVarChar, `%${meThu}%`); }
         if (maBTP) { conditions.push(`MA_TP LIKE @maBTP`); request.input('maBTP', sql.NVarChar, `%${maBTP}%`); }
         if (soLot) { conditions.push(`SO_LOT LIKE @soLot`); request.input('soLot', sql.NVarChar, `%${soLot}%`); }
