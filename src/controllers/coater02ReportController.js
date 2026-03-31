@@ -15,7 +15,7 @@ const createRequest = (pool, timeoutMs = 120000) => {
 // Lọc theo khoảng thời gian
 const filterCoater02s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(1000, parseInt(req.query.limit) || 25);
+    const limit = Math.min(100000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
     const { date1, date2, fanWind } = req.query;
 
@@ -26,7 +26,7 @@ const filterCoater02s = asyncHandler(async (req, res) => {
     const endTime   = moment.utc(date2, 'YYYY-MM-DDTHH:mm:ss');
 
     if (!startTime.isValid() || !endTime.isValid()) {
-        return res.status(400).json({ success: false, message: 'Định dạng thời gian không hợp lệ. Dùng: YYYY-MM-DDTHH:mm:ss' });
+        return res.status(400).json({ success: false, message: 'Định dạng thời gian không hợp lệ.' });
     }
     if (startTime.isAfter(endTime)) {
         return res.status(400).json({ success: false, message: 'Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc' });
@@ -37,46 +37,73 @@ const filterCoater02s = asyncHandler(async (req, res) => {
 
     const pool = await database.getPool1();
 
-    // Thêm điều kiện fanWind nếu có
-    const fanWindClause = fanWind !== undefined && fanWind !== ''
-        ? `AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > @fanWind`
-        : '';
-
-    const whereClause = `
-        WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
-        ${fanWindClause}
-    `;
-
-    // Hàm tạo request dùng chung
     const buildRequest = (pool) => {
-        const req = createRequest(pool)
+        return createRequest(pool)
             .input('startTime', sql.DateTime, startTime.toDate())
             .input('endTime',   sql.DateTime, endTime.toDate());
-
-        // Chỉ thêm input fanWind nếu có giá trị
-        if (fanWind !== undefined && fanWind !== '') {
-            req.input('fanWind', sql.Int, parseInt(fanWind));
-        }
-        return req;
     };
 
-    const [countResult, dataResult] = await Promise.all([
-        buildRequest(pool).query(`
-            SELECT COUNT(*) as total 
-            FROM ${TABLE_NAME} WITH (NOLOCK)
-            ${whereClause}
-        `),
-        buildRequest(pool)
-            .input('offset', sql.Int, offset)
-            .input('limit',  sql.Int, limit)
-            .query(`
-                SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+    let countResult, dataResult;
+
+    if (fanWind !== undefined && fanWind !== '') {
+        const cteQuery = `
+            WITH CTE AS (
+                SELECT *,
+                    LAG(Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE, 1, 0)
+                    OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_fan_value
+                FROM ${TABLE_NAME} WITH (NOLOCK)
+                WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
+            )
+            SELECT * FROM CTE
+            WHERE prev_fan_value = 0
+              AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > 0
+        `;
+
+        [countResult, dataResult] = await Promise.all([
+            buildRequest(pool).query(`
+                WITH CTE AS (
+                    SELECT *,
+                        LAG(Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE, 1, 0)
+                        OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_fan_value
+                    FROM ${TABLE_NAME} WITH (NOLOCK)
+                    WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
+                )
+                SELECT COUNT(*) as total FROM CTE
+                WHERE prev_fan_value = 0
+                  AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > 0
+            `),
+            buildRequest(pool)
+                .input('offset', sql.Int, offset)
+                .input('limit',  sql.Int, limit)
+                .query(`
+                    ${cteQuery}
+                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    OFFSET @offset ROWS
+                    FETCH NEXT @limit ROWS ONLY
+                `)
+        ]);
+    } else {
+        // Không có fanWind → lấy tất cả bình thường
+        const whereClause = `WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime`;
+
+        [countResult, dataResult] = await Promise.all([
+            buildRequest(pool).query(`
+                SELECT COUNT(*) as total 
+                FROM ${TABLE_NAME} WITH (NOLOCK)
                 ${whereClause}
-                ORDER BY [${TIMESTAMP_COL}] ASC
-                OFFSET @offset ROWS
-                FETCH NEXT @limit ROWS ONLY
-            `)
-    ]);
+            `),
+            buildRequest(pool)
+                .input('offset', sql.Int, offset)
+                .input('limit',  sql.Int, limit)
+                .query(`
+                    SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+                    ${whereClause}
+                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    OFFSET @offset ROWS
+                    FETCH NEXT @limit ROWS ONLY
+                `)
+        ]);
+    }
 
     const total = countResult.recordset[0].total;
 
@@ -91,7 +118,6 @@ const filterCoater02s = asyncHandler(async (req, res) => {
         }
     });
 });
-
 // Lấy danh sách cột
 const getColumnCoater02s = asyncHandler(async (req, res) => {
     const pool = await database.getPool1();
