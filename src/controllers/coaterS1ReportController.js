@@ -15,7 +15,7 @@ const createRequest = (pool, timeoutMs = 120000) => {
 // Lọc theo khoảng thời gian
 const filterCoaterS1s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(1000, parseInt(req.query.limit) || 25);
+    const limit = Math.min(100000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
     const { date1, date2, polymerGMin } = req.query;
 
@@ -26,7 +26,7 @@ const filterCoaterS1s = asyncHandler(async (req, res) => {
     const endTime   = moment.utc(date2, 'YYYY-MM-DDTHH:mm:ss');
 
     if (!startTime.isValid() || !endTime.isValid()) {
-        return res.status(400).json({ success: false, message: 'Định dạng thời gian không hợp lệ. Dùng: YYYY-MM-DDTHH:mm:ss' });
+        return res.status(400).json({ success: false, message: 'Định dạng thời gian không hợp lệ.' });
     }
     if (startTime.isAfter(endTime)) {
         return res.status(400).json({ success: false, message: 'Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc' });
@@ -37,45 +37,72 @@ const filterCoaterS1s = asyncHandler(async (req, res) => {
 
     const pool = await database.getPool2();
 
-    // Thêm điều kiện polymerGMin nếu có
-    const polymerClause = polymerGMin !== undefined && polymerGMin !== ''
-        ? `AND Siemens_System_COAT_100_V1_PV_POLYMER_G_MIN_VALUE > @polymerGMin`
-        : '';
-
-    const whereClause = `
-        WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
-        ${polymerClause}
-    `;
-
-    // Hàm tạo request dùng chung
     const buildRequest = (pool) => {
-        const req = createRequest(pool)
+        return createRequest(pool)
             .input('startTime', sql.DateTime, startTime.toDate())
             .input('endTime',   sql.DateTime, endTime.toDate());
-
-        if (polymerGMin !== undefined && polymerGMin !== '') {
-            req.input('polymerGMin', sql.Float, parseFloat(polymerGMin));
-        }
-        return req;
     };
 
-    const [countResult, dataResult] = await Promise.all([
-        buildRequest(pool).query(`
-            SELECT COUNT(*) as total 
-            FROM ${TABLE_NAME} WITH (NOLOCK)
-            ${whereClause}
-        `),
-        buildRequest(pool)
-            .input('offset', sql.Int, offset)
-            .input('limit',  sql.Int, limit)
-            .query(`
-                SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+    let countResult, dataResult;
+
+    if (polymerGMin !== undefined && polymerGMin !== '') {
+        const cteQuery = `
+            WITH CTE AS (
+                SELECT *,
+                    LAG(Siemens_System_COAT_100_V1_PV_POLYMER_G_MIN_VALUE, 1, 0)
+                    OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_polymer_value
+                FROM ${TABLE_NAME} WITH (NOLOCK)
+                WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
+            )
+            SELECT * FROM CTE
+            WHERE prev_polymer_value = 0
+              AND Siemens_System_COAT_100_V1_PV_POLYMER_G_MIN_VALUE > 0
+        `;
+
+        [countResult, dataResult] = await Promise.all([
+            buildRequest(pool).query(`
+                WITH CTE AS (
+                    SELECT *,
+                        LAG(Siemens_System_COAT_100_V1_PV_POLYMER_G_MIN_VALUE, 1, 0)
+                        OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_polymer_value
+                    FROM ${TABLE_NAME} WITH (NOLOCK)
+                    WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
+                )
+                SELECT COUNT(*) as total FROM CTE
+                WHERE prev_polymer_value = 0
+                  AND Siemens_System_COAT_100_V1_PV_POLYMER_G_MIN_VALUE > 0
+            `),
+            buildRequest(pool)
+                .input('offset', sql.Int, offset)
+                .input('limit',  sql.Int, limit)
+                .query(`
+                    ${cteQuery}
+                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    OFFSET @offset ROWS
+                    FETCH NEXT @limit ROWS ONLY
+                `)
+        ]);
+    } else {
+        const whereClause = `WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime`;
+
+        [countResult, dataResult] = await Promise.all([
+            buildRequest(pool).query(`
+                SELECT COUNT(*) as total 
+                FROM ${TABLE_NAME} WITH (NOLOCK)
                 ${whereClause}
-                ORDER BY [${TIMESTAMP_COL}] ASC
-                OFFSET @offset ROWS
-                FETCH NEXT @limit ROWS ONLY
-            `)
-    ]);
+            `),
+            buildRequest(pool)
+                .input('offset', sql.Int, offset)
+                .input('limit',  sql.Int, limit)
+                .query(`
+                    SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+                    ${whereClause}
+                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    OFFSET @offset ROWS
+                    FETCH NEXT @limit ROWS ONLY
+                `)
+        ]);
+    }
 
     const total = countResult.recordset[0].total;
 
