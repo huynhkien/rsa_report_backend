@@ -129,8 +129,8 @@ const updateProduction = asyncHandler(async(req, res) => {
                 TT_BOILER = @TT_BOILER,
                 GHI_CHU_TT_BOILER = @GHI_CHU_TT_BOILER,
                 GHI_CHU = @GHI_CHU,
-                VT_PALLET = @VT_PALLET
-                VT_PALLET_KL_DONG = @VT_PALLET_KL_DONG
+                VT_PALLET = @VT_PALLET,
+                VT_PALLET_KL_DONG = @VT_PALLET_KL_DONG,
                 VT_PALLET_BTP = @VT_PALLET_BTP
             WHERE SO_LOT = @SO_LOT
             `);
