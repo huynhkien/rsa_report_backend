@@ -17,7 +17,7 @@ const filterCoaterS1s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(100000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
-    const { date1, date2, polymerGMin } = req.query;
+    const { date1, date2, polymerGMin, desc } = req.query;
 
     if (!date1 || !date2) {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập thời gian bắt đầu và kết thúc' });
@@ -77,7 +77,7 @@ const filterCoaterS1s = asyncHandler(async (req, res) => {
                 .input('limit',  sql.Int, limit)
                 .query(`
                     ${cteQuery}
-                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    ORDER BY [${TIMESTAMP_COL}] ${desc ? 'DESC' : 'ASC'}
                     OFFSET @offset ROWS
                     FETCH NEXT @limit ROWS ONLY
                 `)
@@ -97,7 +97,7 @@ const filterCoaterS1s = asyncHandler(async (req, res) => {
                 .query(`
                     SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
                     ${whereClause}
-                    ORDER BY [${TIMESTAMP_COL}] ASC
+                    ORDER BY [${TIMESTAMP_COL}] ${desc ? 'DESC' : 'ASC'}
                     OFFSET @offset ROWS
                     FETCH NEXT @limit ROWS ONLY
                 `)
