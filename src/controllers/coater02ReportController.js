@@ -17,7 +17,9 @@ const filterCoater02s = asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(100000, parseInt(req.query.limit) || 25);
     const offset = (page - 1) * limit;
-    const { date1, date2, fanWind, desc } = req.query;
+    const { date1, date2, fanWind, desc, sampleInterval } = req.query;
+    const sample = parseInt(sampleInterval) || 0; // giây, 0 = không lấy mẫu
+    console.log(sample)
 
     if (!date1 || !date2) {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập thời gian bắt đầu và kết thúc' });
@@ -37,84 +39,143 @@ const filterCoater02s = asyncHandler(async (req, res) => {
 
     const pool = await database.getPool1();
 
-    const buildRequest = (pool) => {
-        return createRequest(pool)
+    const buildRequest = (pool) =>
+        createRequest(pool)
             .input('startTime', sql.DateTime, startTime.toDate())
             .input('endTime',   sql.DateTime, endTime.toDate());
-    };
 
+    const orderDir = desc ? 'DESC' : 'ASC';
     let countResult, dataResult;
 
+    // Nếu quạt hút ghi nhận thông số
     if (fanWind !== undefined && fanWind !== '') {
-        const cteQuery = `
-            WITH CTE AS (
+        const fanCTE = `
+            WITH FanCTE AS (
                 SELECT *,
                     LAG(Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE, 1, 0)
                     OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_fan_value
                 FROM ${TABLE_NAME} WITH (NOLOCK)
                 WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
-            )
-            SELECT * FROM CTE
-            WHERE prev_fan_value = 0
-              AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > 0
-        `;
-
-        [countResult, dataResult] = await Promise.all([
-            buildRequest(pool).query(`
-                WITH CTE AS (
-                    SELECT *,
-                        LAG(Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE, 1, 0)
-                        OVER (ORDER BY [${TIMESTAMP_COL}]) AS prev_fan_value
-                    FROM ${TABLE_NAME} WITH (NOLOCK)
-                    WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime
-                )
-                SELECT COUNT(*) as total FROM CTE
+            ),
+            FanFiltered AS (
+                SELECT * FROM FanCTE
                 WHERE prev_fan_value = 0
                   AND Siemens_System_COAT2_DB20_ATV212_CONTROL_MODBUS_FAN_WIND_PV_FREQ_VALUE > 0
-            `),
-            buildRequest(pool)
-                .input('offset', sql.Int, offset)
-                .input('limit',  sql.Int, limit)
-                .query(`
-                    ${cteQuery}
-                    ORDER BY [${TIMESTAMP_COL}] ${desc ? 'DESC' : 'ASC'}
-                    OFFSET @offset ROWS
-                    FETCH NEXT @limit ROWS ONLY
-                `)
-        ]);
+            )
+        `;
+
+        if (sample > 0) {
+            // fanWind + sampling
+            const fullCTE = `
+                ${fanCTE},
+                Sampled AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY DATEDIFF(SECOND, @startTime, [${TIMESTAMP_COL}]) / @sampleInterval
+                            ORDER BY [${TIMESTAMP_COL}]
+                        ) AS rn
+                    FROM FanFiltered
+                ),
+                Final AS (SELECT * FROM Sampled WHERE rn = 1)
+            `;
+
+            [countResult, dataResult] = await Promise.all([
+                buildRequest(pool)
+                    .input('sampleInterval', sql.Int, sample)
+                    .query(`${fullCTE} SELECT COUNT(*) as total FROM Final`),
+
+                buildRequest(pool)
+                    .input('sampleInterval', sql.Int, sample)
+                    .input('offset', sql.Int, offset)
+                    .input('limit',  sql.Int, limit)
+                    .query(`
+                        ${fullCTE}
+                        SELECT * FROM Final
+                        ORDER BY [${TIMESTAMP_COL}] ${orderDir}
+                        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                    `)
+            ]);
+        } else {
+            [countResult, dataResult] = await Promise.all([
+                buildRequest(pool)
+                    .query(`${fanCTE} SELECT COUNT(*) as total FROM FanFiltered`),
+
+                buildRequest(pool)
+                    .input('offset', sql.Int, offset)
+                    .input('limit',  sql.Int, limit)
+                    .query(`
+                        ${fanCTE}
+                        SELECT * FROM FanFiltered
+                        ORDER BY [${TIMESTAMP_COL}] ${orderDir}
+                        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                    `)
+            ]);
+        }
+    // Nếu quạt hút chưa ghi nhận thông số
     } else {
-        // Không có fanWind → lấy tất cả bình thường
         const whereClause = `WHERE [${TIMESTAMP_COL}] BETWEEN @startTime AND @endTime`;
 
-        [countResult, dataResult] = await Promise.all([
-            buildRequest(pool).query(`
-                SELECT COUNT(*) as total 
-                FROM ${TABLE_NAME} WITH (NOLOCK)
-                ${whereClause}
-            `),
-            buildRequest(pool)
-                .input('offset', sql.Int, offset)
-                .input('limit',  sql.Int, limit)
-                .query(`
-                    SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+        if (sample > 0) {
+            // Sampling không fanWind
+            const samplingCTE = `
+                WITH Sampled AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY DATEDIFF(SECOND, @startTime, [${TIMESTAMP_COL}]) / @sampleInterval
+                            ORDER BY [${TIMESTAMP_COL}]
+                        ) AS rn
+                    FROM ${TABLE_NAME} WITH (NOLOCK)
                     ${whereClause}
-                    ORDER BY [${TIMESTAMP_COL}] ${desc ? 'DESC' : 'ASC'}
-                    OFFSET @offset ROWS
-                    FETCH NEXT @limit ROWS ONLY
-                `)
-        ]);
+                ),
+                Final AS (SELECT * FROM Sampled WHERE rn = 1)
+            `;
+
+            [countResult, dataResult] = await Promise.all([
+                buildRequest(pool)
+                    .input('sampleInterval', sql.Int, sample)
+                    .query(`${samplingCTE} SELECT COUNT(*) as total FROM Final`),
+
+                buildRequest(pool)
+                    .input('sampleInterval', sql.Int, sample)
+                    .input('offset', sql.Int, offset)
+                    .input('limit',  sql.Int, limit)
+                    .query(`
+                        ${samplingCTE}
+                        SELECT * FROM Final
+                        ORDER BY [${TIMESTAMP_COL}] ${orderDir}
+                        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                    `)
+            ]);
+        } else {
+            // Không sampling, không fanWind 
+            [countResult, dataResult] = await Promise.all([
+                buildRequest(pool)
+                    .query(`
+                        SELECT COUNT(*) as total
+                        FROM ${TABLE_NAME} WITH (NOLOCK)
+                        ${whereClause}
+                    `),
+
+                buildRequest(pool)
+                    .input('offset', sql.Int, offset)
+                    .input('limit',  sql.Int, limit)
+                    .query(`
+                        SELECT * FROM ${TABLE_NAME} WITH (NOLOCK)
+                        ${whereClause}
+                        ORDER BY [${TIMESTAMP_COL}] ${orderDir}
+                        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                    `)
+            ]);
+        }
     }
-
-    const total = countResult.recordset[0].total;
-
     return res.json({
         success: true,
         data: dataResult.recordset,
         pagination: {
-            totalCount: total,
+            totalCount: countResult.recordset[0].total,
             page,
             limit,
-            totalPages: Math.ceil(total / limit)
+            totalPages: Math.ceil(countResult.recordset[0].total / limit)
         }
     });
 });
