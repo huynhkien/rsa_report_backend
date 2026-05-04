@@ -218,7 +218,6 @@ const getProductions = asyncHandler(async (req, res) => {
 // Xóa thông tin đợt sản phẩm 
 const deleteProduction = asyncHandler(async(req, res) => {
     const { id } = req.params;
-    console.log(id)
     if(!id) throw new Error('Không tìm thấy thông tin đợt sản xuất');
     const pool = await database.getPool3();
     const result = await pool.request()
