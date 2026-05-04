@@ -19,7 +19,6 @@ const filterCoater02s = asyncHandler(async (req, res) => {
     const offset = (page - 1) * limit;
     const { date1, date2, fanWind, desc, sampleInterval } = req.query;
     const sample = parseInt(sampleInterval) || 0; // giây, 0 = không lấy mẫu
-    console.log(sample)
 
     if (!date1 || !date2) {
         return res.status(400).json({ success: false, message: 'Vui lòng nhập thời gian bắt đầu và kết thúc' });
