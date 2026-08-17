@@ -23,7 +23,8 @@ async function ConnectDatabase() {
             pool: {
                 max: 10,
                 min: 0,
-                idleTimeoutMillis: 30000
+                idleTimeoutMillis: 30000,
+                acquireTimeoutMillis: 15000
             }
         }).connect();
         // Database 1 - Chỉ só tháp 1000KG
@@ -39,9 +40,10 @@ async function ConnectDatabase() {
             requestTimeout: 60000,  
             connectionTimeout: 30000,
             pool: {
-                max: 10,
+                max: 20,
                 min: 0,
-                idleTimeoutMillis: 30000
+                idleTimeoutMillis: 30000,
+                acquireTimeoutMillis: 15000
             }
         }).connect();
         // Database 2 - Chỉ số tháp 100KG
@@ -57,9 +59,10 @@ async function ConnectDatabase() {
             requestTimeout: 60000,  
             connectionTimeout: 30000,
             pool: {
-                max: 10,
+                max: 20,
                 min: 0,
-                idleTimeoutMillis: 30000
+                idleTimeoutMillis: 30000,
+                acquireTimeoutMillis: 15000
             }
         }).connect();
         // Database 3 - Đợt sản xuất 
@@ -77,7 +80,8 @@ async function ConnectDatabase() {
             pool: {
                 max: 10,
                 min: 0,
-                idleTimeoutMillis: 30000
+                idleTimeoutMillis: 30000,
+                acquireTimeoutMillis: 15000
             }
         }).connect();
         // Database 4 - Production Managenet 
@@ -95,7 +99,8 @@ async function ConnectDatabase() {
             pool: {
                 max: 10,
                 min: 0,
-                idleTimeoutMillis: 30000
+                idleTimeoutMillis: 30000,
+                acquireTimeoutMillis: 15000
             }
         }).connect();
         console.log("Kết nối tất cả database thành công");
